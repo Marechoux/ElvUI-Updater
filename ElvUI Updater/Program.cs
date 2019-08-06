@@ -42,10 +42,10 @@ namespace ElvUI_Updater
                 webClient.DownloadFile("https://git.tukui.org/elvui/elvui/repository/master/archive.zip", executablePath + "elvui-latest.zip");
 
                 List<string> elvuiDirectories = new List<string>()
-            {
-                "ElvUI",
-                "ElvUI_OptionsUI"
-            };
+                {
+                    "ElvUI",
+                    "ElvUI_OptionsUI"
+                };
 
                 foreach (string directory in elvuiDirectories)
                 {
