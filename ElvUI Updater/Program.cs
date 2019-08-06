@@ -9,6 +9,10 @@ namespace ElvUI_Updater
 {
     class Program
     {
+        enum PathType { ADDONS, ARCHIVE, EXECUTABLE, INTERFACE, INSTALL, TMP };
+
+        static string installPath = (string)Registry.GetValue("HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Blizzard Entertainment\\World of Warcraft", "InstallPath", null);
+
         static void Main(string[] args)
         {
             // https://git.tukui.org/elvui/elvui/repository/development/archive.zip
@@ -16,30 +20,25 @@ namespace ElvUI_Updater
 
             try
             {
-                string executablePath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + Path.DirectorySeparatorChar;
-
-                string addonPath = "Interface" + Path.DirectorySeparatorChar + "Addons" + Path.DirectorySeparatorChar;
-                string installPath = (string)Registry.GetValue("HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Blizzard Entertainment\\World of Warcraft", "InstallPath", null);
-
                 if (installPath == null)
                 {
                     Console.WriteLine("Unable to find the game path, exiting ...");
                     return;
                 }
 
-                Console.WriteLine("Using game in: {0}", installPath);
+                Console.WriteLine("Using game in: {0}", getPath(PathType.INSTALL));
 
-                if (!Directory.Exists(installPath + addonPath))
+                if (!Directory.Exists(getPath(PathType.ADDONS)))
                 {
                     Console.WriteLine("Addons path not found, exiting ...");
                     return;
                 }
 
-                clean(executablePath);
+                clean();
 
                 Console.WriteLine("Downloading new files ...");
                 WebClient webClient = new WebClient();
-                webClient.DownloadFile("https://git.tukui.org/elvui/elvui/repository/master/archive.zip", executablePath + "elvui-latest.zip");
+                webClient.DownloadFile("https://git.tukui.org/elvui/elvui/repository/master/archive.zip", getPath(PathType.ARCHIVE));
 
                 List<string> elvuiDirectories = new List<string>()
                 {
@@ -49,35 +48,35 @@ namespace ElvUI_Updater
 
                 foreach (string directory in elvuiDirectories)
                 {
-                    if (Directory.Exists(installPath + addonPath + directory))
+                    if (Directory.Exists(getPath(PathType.ADDONS) + directory))
                     {
                         Console.WriteLine("Addon {0} found, deleting ...", directory);
-                        Directory.Delete(installPath + addonPath + directory, true);
+                        Directory.Delete(getPath(PathType.ADDONS) + directory, true);
                     }
                 }
 
                 Console.WriteLine("Unzipping ...");
-                ZipFile.ExtractToDirectory(executablePath + "elvui-latest.zip", executablePath + "tmp");
+                ZipFile.ExtractToDirectory(getPath(PathType.ARCHIVE), getPath(PathType.TMP));
 
                 Console.WriteLine("Copying new files ...");
 
                 string tmpDir = "";
-                List<string> dirs = new List<string>(Directory.EnumerateDirectories(executablePath + "tmp"));
+                List<string> dirs = new List<string>(Directory.EnumerateDirectories(getPath(PathType.TMP)));
                 foreach (string dir in dirs)
                 {
                     tmpDir = $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}";
                     break;
                 }
 
-                dirs = new List<string>(Directory.EnumerateDirectories(executablePath + "tmp" + Path.DirectorySeparatorChar + tmpDir));
+                dirs = new List<string>(Directory.EnumerateDirectories(getPath(PathType.TMP) + Path.DirectorySeparatorChar + tmpDir));
                 foreach (string dir in dirs)
                 {
-                    Console.WriteLine(installPath + addonPath + $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}");
-                    Copy(dir, installPath + addonPath + $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}");
+                    Console.WriteLine(getPath(PathType.ADDONS) + $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}");
+                    Copy(dir, getPath(PathType.ADDONS) + $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}");
                 }
 
                 Console.WriteLine("Cleaning ...");
-                clean(executablePath);
+                clean();
 
                 Console.WriteLine("Installation completed !");
             }
@@ -89,16 +88,16 @@ namespace ElvUI_Updater
             Console.ReadKey();
         }
 
-        private static void clean(string executablePath)
+        private static void clean()
         {
-            if (File.Exists(executablePath + "elvui-latest.zip"))
-                File.Delete(executablePath + "elvui-latest.zip");
+            if (File.Exists(getPath(PathType.ARCHIVE)))
+                File.Delete(getPath(PathType.ARCHIVE));
 
-            if (Directory.Exists(executablePath + "tmp"))
-                Directory.Delete(executablePath + "tmp", true);
+            if (Directory.Exists(getPath(PathType.TMP)))
+                Directory.Delete(getPath(PathType.TMP), true);
         }
 
-        public static void Copy(string sourceDirectory, string targetDirectory)
+        static void Copy(string sourceDirectory, string targetDirectory)
         {
             DirectoryInfo diSource = new DirectoryInfo(sourceDirectory);
             DirectoryInfo diTarget = new DirectoryInfo(targetDirectory);
@@ -106,7 +105,7 @@ namespace ElvUI_Updater
             CopyAll(diSource, diTarget);
         }
 
-        public static void CopyAll(DirectoryInfo source, DirectoryInfo target)
+        static void CopyAll(DirectoryInfo source, DirectoryInfo target)
         {
             Directory.CreateDirectory(target.FullName);
 
@@ -120,6 +119,26 @@ namespace ElvUI_Updater
                 DirectoryInfo nextTargetSubDir =
                     target.CreateSubdirectory(diSourceSubDir.Name);
                 CopyAll(diSourceSubDir, nextTargetSubDir);
+            }
+        }
+
+        static string getPath(PathType type)
+        {
+            switch (type)
+            {
+                case PathType.ADDONS:
+                    return installPath + "Interface" + Path.DirectorySeparatorChar + "Addons" + Path.DirectorySeparatorChar;
+                case PathType.ARCHIVE:
+                    return installPath + "Interface" + Path.DirectorySeparatorChar + "elvui-latest.zip";
+                case PathType.EXECUTABLE:
+                    return Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + Path.DirectorySeparatorChar;
+                case PathType.INTERFACE:
+                    return installPath + "Interface" + Path.DirectorySeparatorChar;
+                case PathType.TMP:
+                    return installPath + "Interface" + Path.DirectorySeparatorChar + "ElvUI_Update" + Path.DirectorySeparatorChar;
+                case PathType.INSTALL:
+                default:
+                    return installPath;
             }
         }
     }
