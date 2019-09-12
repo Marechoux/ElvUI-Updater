@@ -36,9 +36,35 @@ namespace ElvUI_Updater
 
                 clean();
 
+                Console.WriteLine("Which version do you want to install ? [def = m]");
+                Console.WriteLine("Master: m");
+                Console.WriteLine("Development: d");
+
+                bool notFound = true;
+                string downloadUrl = null;
+                do
+                {
+                    ConsoleKeyInfo cki = Console.ReadKey();
+                    switch (cki.Key)
+                    {
+                        case ConsoleKey.Enter:
+                        case ConsoleKey.M:
+                            downloadUrl = "https://git.tukui.org/elvui/elvui/repository/master/archive.zip";
+                            notFound = false;
+                            break;
+                        case ConsoleKey.D:
+                            downloadUrl = "https://git.tukui.org/elvui/elvui/repository/development/archive.zip";
+                            notFound = false;
+                            break;
+                        default:
+                            break;
+                    }
+                } while (notFound);
+
+                Console.WriteLine("");
                 Console.WriteLine("Downloading new files ...");
                 WebClient webClient = new WebClient();
-                webClient.DownloadFile("https://git.tukui.org/elvui/elvui/repository/master/archive.zip", getPath(PathType.ARCHIVE));
+                webClient.DownloadFile(downloadUrl, getPath(PathType.ARCHIVE));
 
                 List<string> elvuiDirectories = new List<string>()
                 {
@@ -71,6 +97,9 @@ namespace ElvUI_Updater
                 dirs = new List<string>(Directory.EnumerateDirectories(getPath(PathType.TMP) + Path.DirectorySeparatorChar + tmpDir));
                 foreach (string dir in dirs)
                 {
+                    if (dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)[0] == '.')
+                        continue;
+
                     Console.WriteLine(getPath(PathType.ADDONS) + $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}");
                     Copy(dir, getPath(PathType.ADDONS) + $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}");
                 }
