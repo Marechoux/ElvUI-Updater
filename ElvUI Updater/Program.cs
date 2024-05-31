@@ -4,25 +4,36 @@ using System.IO;
 using System.IO.Compression;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Http;
+using System.Security.Policy;
+using System.Threading.Tasks;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace ElvUI_Updater
 {
     class Program
     {
-        enum PathType { ADDONS, ARCHIVE, EXECUTABLE, INTERFACE, INSTALL, TMP };
+        enum PathType { ADDONS, ARCHIVE, EXECUTABLE, INTERFACE, INSTALL, TMP, TOC };
 
-        static string installPath = (string)Registry.GetValue("HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Blizzard Entertainment\\World of Warcraft", "InstallPath", null);
+        static string installPath = (string)Registry.GetValue("HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\World of Warcraft", "InstallLocation", null);
 
-        static void Main(string[] args)
+        static string installedVersion = null;
+
+        static async Task Main(string[] args)
         {
             // https://git.tukui.org/elvui/elvui/repository/development/archive.zip
             // https://git.tukui.org/elvui/elvui/repository/master/archive.zip
+
+            // https://api.tukui.org/v1/addon/elvui
 
             try
             {
                 if (installPath == null)
                 {
                     Console.WriteLine("Unable to find the game path, exiting ...");
+                    Console.ReadKey();
                     return;
                 }
 
@@ -31,44 +42,88 @@ namespace ElvUI_Updater
                 if (!Directory.Exists(getPath(PathType.ADDONS)))
                 {
                     Console.WriteLine("Addons path not found, exiting ...");
+                    Console.ReadKey();
                     return;
                 }
 
                 clean();
 
-                Console.WriteLine("Which version do you want to install ? [def = m]");
-                Console.WriteLine("Master: m");
-                Console.WriteLine("Development: d");
-
-                bool notFound = true;
-                string downloadUrl = null;
-                do
+                try
                 {
-                    ConsoleKeyInfo cki = Console.ReadKey();
-                    switch (cki.Key)
+                    using (StreamReader reader = new StreamReader(getPath(PathType.TOC)))
                     {
-                        case ConsoleKey.Enter:
-                        case ConsoleKey.M:
-                            downloadUrl = "https://git.tukui.org/elvui/elvui/repository/master/archive.zip";
-                            notFound = false;
-                            break;
-                        case ConsoleKey.D:
-                            downloadUrl = "https://git.tukui.org/elvui/elvui/repository/development/archive.zip";
-                            notFound = false;
-                            break;
-                        default:
-                            break;
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            if (line.StartsWith("## Version:"))
+                            {
+                                Regex regex = new Regex(@"## Version:\s*v(\d+\.\d+)");
+                                Match match = regex.Match(line);
+                                if (match.Success)
+                                {
+                                    installedVersion = match.Groups[1].Value;
+                                    break;
+                                }
+                            }
+                        }
+
+                        Console.WriteLine("Installed version: {0}", installedVersion);
                     }
-                } while (notFound);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Error reading toc file: {0}", e.Message);
+                }
+
+                try
+                {
+                    await Addon.LoadFromUrl("https://api.tukui.org/v1/addon/elvui");
+                    Console.WriteLine("Last version:      {0}", Addon.Version);
+                }
+                catch (HttpRequestException e)
+                {
+                    Console.WriteLine("Request error: {0}", e.Message);
+                }
+                catch (JsonException e)
+                {
+                    Console.WriteLine("JSON deserialization error: {0}", e.Message);
+                }
+
+                if (installedVersion == Addon.Version)
+                {
+                    Console.WriteLine("Last version is already installed !");
+                    Console.ReadKey();
+                    return;
+                }
+
+                Console.WriteLine("Process with the update ? (y, n [def = n])");
+
+                bool proceed = false;
+
+                ConsoleKeyInfo cki = Console.ReadKey();
+                switch (cki.Key)
+                {
+                    case ConsoleKey.Y:
+                        proceed = true;
+                        break;
+                    default:
+                        break;
+                }
+
+                if (!proceed)
+                {
+                    return;
+                }
 
                 Console.WriteLine("");
                 Console.WriteLine("Downloading new files ...");
                 WebClient webClient = new WebClient();
-                webClient.DownloadFile(downloadUrl, getPath(PathType.ARCHIVE));
+                webClient.DownloadFile(Addon.Url, getPath(PathType.ARCHIVE));
 
                 List<string> elvuiDirectories = new List<string>()
                 {
                     "ElvUI",
+                    "ElvUI_Libraries",
                     "ElvUI_OptionsUI"
                 };
 
@@ -86,15 +141,7 @@ namespace ElvUI_Updater
 
                 Console.WriteLine("Copying new files ...");
 
-                string tmpDir = "";
                 List<string> dirs = new List<string>(Directory.EnumerateDirectories(getPath(PathType.TMP)));
-                foreach (string dir in dirs)
-                {
-                    tmpDir = $"{dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)}";
-                    break;
-                }
-
-                dirs = new List<string>(Directory.EnumerateDirectories(getPath(PathType.TMP) + Path.DirectorySeparatorChar + tmpDir));
                 foreach (string dir in dirs)
                 {
                     if (dir.Substring(dir.LastIndexOf(Path.DirectorySeparatorChar) + 1)[0] == '.')
@@ -156,15 +203,17 @@ namespace ElvUI_Updater
             switch (type)
             {
                 case PathType.ADDONS:
-                    return installPath + "Interface" + Path.DirectorySeparatorChar + "Addons" + Path.DirectorySeparatorChar;
+                    return installPath + Path.DirectorySeparatorChar + "_retail_" + Path.DirectorySeparatorChar + "Interface" + Path.DirectorySeparatorChar + "Addons" + Path.DirectorySeparatorChar;
                 case PathType.ARCHIVE:
-                    return installPath + "Interface" + Path.DirectorySeparatorChar + "elvui-latest.zip";
+                    return installPath + Path.DirectorySeparatorChar + "_retail_" + Path.DirectorySeparatorChar + "Interface" + Path.DirectorySeparatorChar + "elvui-latest.zip";
                 case PathType.EXECUTABLE:
                     return Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + Path.DirectorySeparatorChar;
                 case PathType.INTERFACE:
-                    return installPath + "Interface" + Path.DirectorySeparatorChar;
+                    return installPath + Path.DirectorySeparatorChar + "_retail_" + Path.DirectorySeparatorChar  + "Interface" + Path.DirectorySeparatorChar;
                 case PathType.TMP:
-                    return installPath + "Interface" + Path.DirectorySeparatorChar + "ElvUI_Update" + Path.DirectorySeparatorChar;
+                    return installPath + Path.DirectorySeparatorChar + "_retail_" + Path.DirectorySeparatorChar  + "Interface" + Path.DirectorySeparatorChar + "ElvUI_Update" + Path.DirectorySeparatorChar;
+                case PathType.TOC:
+                    return installPath + Path.DirectorySeparatorChar + "_retail_" + Path.DirectorySeparatorChar + "Interface" + Path.DirectorySeparatorChar + "Addons" + Path.DirectorySeparatorChar + "ElvUI" + Path.DirectorySeparatorChar + "ElvUI_Mainline.toc";
                 case PathType.INSTALL:
                 default:
                     return installPath;
